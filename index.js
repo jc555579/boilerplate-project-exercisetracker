@@ -74,6 +74,7 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 });
 
 // Get logs
+// Get logs
 app.get('/api/users/:_id/logs', async (req, res) => {
   const { from, to, limit } = req.query;
   const user = await User.findById(req.params._id);
@@ -94,11 +95,11 @@ app.get('/api/users/:_id/logs', async (req, res) => {
   // limit logs
   if (limit) logs = logs.slice(0, parseInt(limit));
 
-  // ✅ ensure date is string
+  // ✅ ensure date is in toDateString format
   const formattedLogs = logs.map(ex => ({
     description: ex.description,
     duration: ex.duration,
-    date: ex.date
+    date: new Date(ex.date).toDateString()
   }));
 
   res.json({
