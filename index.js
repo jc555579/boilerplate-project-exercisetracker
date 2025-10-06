@@ -4,31 +4,33 @@ const cors = require('cors');
 require('dotenv').config();
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
 
-// Setup Express
+// Middleware setup
 app.use(cors());
 app.use(express.static('public'));
 app.use(bodyParser.urlencoded({ extended: false }));
 
-// Connect to MongoDB Atlas
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+// MongoDB connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+});
 
-// Create Schema
-const userSchema = new Schema({
+// Schema
+const userSchema = new mongoose.Schema({
   username: { type: String, required: true },
   log: [
     {
       description: String,
       duration: Number,
-      date: Date
+      date: String // ✅ store as string instead of Date
     }
   ]
 });
 
 const User = mongoose.model('User', userSchema);
 
-// Routes
+// Root route
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html');
 });
@@ -36,104 +38,82 @@ app.get('/', (req, res) => {
 // Create and get users
 app.route('/api/users')
   .get(async (req, res) => {
-    try {
-      const users = await User.find({}, 'username _id');
-      res.json(users);
-    } catch (err) {
-      res.status(500).json({ error: 'Failed to fetch users' });
-    }
+    const users = await User.find({}, 'username _id');
+    res.json(users);
   })
   .post(async (req, res) => {
-    try {
-      const newUser = new User({ username: req.body.username });
-      const savedUser = await newUser.save();
-      res.json(savedUser);
-    } catch (err) {
-      res.status(500).json({ error: 'Failed to create user' });
-    }
+    const newUser = new User({ username: req.body.username });
+    await newUser.save();
+    res.json({ username: newUser.username, _id: newUser._id });
   });
 
 // Add exercise
 app.post('/api/users/:_id/exercises', async (req, res) => {
-  try {
-    const user = await User.findById(req.params._id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+  const { description, duration, date } = req.body;
+  const user = await User.findById(req.params._id);
+  if (!user) return res.json({ error: 'User not found' });
 
-    let date = req.body.date ? new Date(req.body.date) : new Date();
+  const exerciseDate = date ? new Date(date).toDateString() : new Date().toDateString();
 
-    const newExercise = {
-      description: req.body.description,
-      duration: Number(req.body.duration),
-      date
-    };
+  const exercise = {
+    description,
+    duration: Number(duration),
+    date: exerciseDate
+  };
 
-    user.log.push(newExercise);
-    await user.save();
+  user.log.push(exercise);
+  await user.save();
 
-    res.json({
-      username: user.username,
-      description: newExercise.description,
-      duration: newExercise.duration,
-      date: newExercise.date.toDateString(),
-      _id: user._id
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to add exercise' });
-  }
+  res.json({
+    username: user.username,
+    description,
+    duration: Number(duration),
+    date: exerciseDate,
+    _id: user._id
+  });
 });
 
-// Get logs (✅ Fixed)
+// Get logs
 app.get('/api/users/:_id/logs', async (req, res) => {
-  try {
-    const { from, to, limit } = req.query;
-    const user = await User.findById(req.params._id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+  const { from, to, limit } = req.query;
+  const user = await User.findById(req.params._id);
+  if (!user) return res.json({ error: 'User not found' });
 
-    let log = [...user.log];
+  let logs = [...user.log];
 
-    // Filter by date range if provided
-    if (from) {
-      const fromDate = new Date(from);
-      log = log.filter(e => e.date >= fromDate);
-    }
-    if (to) {
-      const toDate = new Date(to);
-      log = log.filter(e => e.date <= toDate);
-    }
-
-    // Limit results
-    if (limit) {
-      log = log.slice(0, Number(limit));
-    }
-
-    // ✅ Convert date safely and ensure it's a string
-    const formattedLog = log.map(e => ({
-      description: e.description,
-      duration: e.duration,
-      date: e.date instanceof Date && !isNaN(e.date)
-        ? e.date.toDateString()
-        : new Date(e.date || Date.now()).toDateString()
-    }));
-
-    res.json({
-      username: user.username,
-      count: formattedLog.length,
-      _id: user._id,
-      log: formattedLog
+  // filter by date range
+  if (from || to) {
+    const fromDate = from ? new Date(from) : new Date(0);
+    const toDate = to ? new Date(to) : new Date();
+    logs = logs.filter(ex => {
+      const exDate = new Date(ex.date);
+      return exDate >= fromDate && exDate <= toDate;
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch logs' });
   }
+
+  // limit logs
+  if (limit) logs = logs.slice(0, parseInt(limit));
+
+  // ✅ ensure date is string
+  const formattedLogs = logs.map(ex => ({
+    description: ex.description,
+    duration: ex.duration,
+    date: ex.date
+  }));
+
+  res.json({
+    username: user.username,
+    count: formattedLogs.length,
+    _id: user._id,
+    log: formattedLogs
+  });
 });
 
-
-// 404 fallback
+// Handle not found
 app.all('*', (req, res) => {
   res.status(404).send('Error 404: Path or Route Not Found');
 });
 
-// Start server
 const listener = app.listen(process.env.PORT || 3000, () => {
   console.log('Your app is listening on port ' + listener.address().port);
 });
