@@ -91,26 +91,28 @@ app.get('/api/users/:_id/logs', async (req, res) => {
 
     let log = [...user.log];
 
-    // Filter by date
+    // Filter by date range if provided
     if (from) {
       const fromDate = new Date(from);
-      log = log.filter((e) => e.date >= fromDate);
+      log = log.filter(e => e.date >= fromDate);
     }
     if (to) {
       const toDate = new Date(to);
-      log = log.filter((e) => e.date <= toDate);
+      log = log.filter(e => e.date <= toDate);
     }
 
-    // Limit
+    // Limit results
     if (limit) {
       log = log.slice(0, Number(limit));
     }
 
-    // ✅ Convert date to string safely
-    const formattedLog = log.map((e) => ({
+    // ✅ Convert date safely and ensure it's a string
+    const formattedLog = log.map(e => ({
       description: e.description,
       duration: e.duration,
-      date: e.date ? new Date(e.date).toDateString() : new Date().toDateString()
+      date: e.date instanceof Date && !isNaN(e.date)
+        ? e.date.toDateString()
+        : new Date(e.date || Date.now()).toDateString()
     }));
 
     res.json({
@@ -120,9 +122,11 @@ app.get('/api/users/:_id/logs', async (req, res) => {
       log: formattedLog
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Failed to fetch logs' });
   }
 });
+
 
 // 404 fallback
 app.all('*', (req, res) => {
